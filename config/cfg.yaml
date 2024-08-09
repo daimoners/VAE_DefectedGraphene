@@ -1,0 +1,18 @@
+dataset_path: ./data/training_dataset
+model_out_path: ./models
+results_out_path: ./results
+
+train:
+  batch_size: 32
+  image_size: 96
+  lr: 0.0001
+  nepoch: 800
+  early_stop_patience: 80
+  scheduler_patience: 50
+
+vae:
+  ch: 32
+  blocks: [1, 2, 4, 8]
+  latent_channels: 1500
+
+telegram_bot: True

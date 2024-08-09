@@ -178,7 +178,7 @@ def main(args):
         scheduler.step(np.mean(val_loss_log))
 
         if np.mean(val_loss_log) < lowest_val_loss:
-            Utils.remove_old_models(Path("./Models/"))
+            Utils.remove_old_models(Path(args.model_out_path))
             torch.save(
                 {
                     "epoch": epoch,

@@ -1,7 +1,6 @@
-dataset_path: ./data/training_dataset_240A
-model_out_path: ./models
-mixed_model_out_path: ./models_mixed
-results_out_path: ./results
+dataset_path: ./data/training_dataset_mixed
+model_out_path: ./models_mixed
+results_out_path: ./results_mixed
 matmul_precision: highest
 deterministic: True
 random_seed: 42

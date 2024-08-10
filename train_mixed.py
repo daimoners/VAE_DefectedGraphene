@@ -27,7 +27,7 @@ class SLURM_Trainer(object):
         train(self.args)
 
 
-@hydra.main(version_base="1.2", config_path="config", config_name="cfg")
+@hydra.main(version_base="1.2", config_path="config", config_name="cfg_mixed")
 def main(args):
     if args.verbose:
         ic.enable()
@@ -98,7 +98,7 @@ def train(args):
 
     device = torch.device("cuda")
 
-    trainloader, testloader, valloader = Utils.get_dataloaders(
+    trainloader, testloader, valloader = Utils.get_mixed_dataloaders(
         dataset_path=Path(args.dataset_path),
         batch_size=batch_size,
         resolution=image_size,
@@ -129,7 +129,7 @@ def train(args):
     lowest_val_loss = np.inf
 
     dataiter = iter(testloader)
-    test_images = next(dataiter)
+    test_images, bond_test_images = next(dataiter)
     test_images.shape
 
     # TRAIN
@@ -138,17 +138,22 @@ def train(args):
     for epoch in range(0, nepoch):
         vae_net.train()
         pbar_batches = tqdm(total=len(trainloader), desc="Batch", leave=False)
-        for images in trainloader:
+        for images, bond_images in trainloader:
             images = images.to(device)
+            bond_images = bond_images.to(device)
 
             recon_img, mu, logvar = vae_net(images)
             # VAE loss
             kl_loss_value = kl_loss(mu, logvar)
 
-            image_loss_value = image_loss(recon_img, images)
+            image_loss_value = image_loss(recon_img, bond_images)
             # Perception loss
             feat_in = torch.cat(
-                (Utils.grayscale_to_rgb(recon_img), Utils.grayscale_to_rgb(images)), 0
+                (
+                    Utils.grayscale_to_rgb(recon_img),
+                    Utils.grayscale_to_rgb(bond_images),
+                ),
+                0,
             )
             feature_loss_value = feature_extractor(feat_in)
 
@@ -156,7 +161,7 @@ def train(args):
                 kl_loss_value
                 + image_loss_value
                 + feature_loss_value
-                + fourier_loss(recon_img, images)
+                + fourier_loss(recon_img, bond_images)
             )
 
             # print(loss)
@@ -174,17 +179,21 @@ def train(args):
         vae_net.eval()
         pbar_batches = tqdm(total=len(valloader), desc="Batch", leave=False)
         with torch.no_grad():
-            for images in valloader:
+            for images, bond_images in valloader:
                 images = images.to(device)
+                bond_images = bond_images.to(device)
 
                 recon_img, mu, logvar = vae_net(images)
                 # VAE loss
                 kl_loss_value = kl_loss(mu, logvar)
                 # mse_loss = F.mse_loss(recon_img, images)
-                image_loss_value = image_loss(recon_img, images)
+                image_loss_value = image_loss(recon_img, bond_images)
                 # Perception loss
                 feat_in = torch.cat(
-                    (Utils.grayscale_to_rgb(recon_img), Utils.grayscale_to_rgb(images)),
+                    (
+                        Utils.grayscale_to_rgb(recon_img),
+                        Utils.grayscale_to_rgb(bond_images),
+                    ),
                     0,
                 )
                 feature_loss_value = feature_extractor(feat_in)
@@ -193,7 +202,7 @@ def train(args):
                     kl_loss_value
                     + image_loss_value
                     + feature_loss_value
-                    + fourier_loss(recon_img, images)
+                    + fourier_loss(recon_img, bond_images)
                 )
 
                 val_loss_log.append(loss.item())
@@ -219,7 +228,7 @@ def train(args):
             early_stop_count = 0
 
             recon_img, _, _ = vae_net(test_images.to(device))
-            img_cat = torch.cat((recon_img.cpu(), test_images), 2)
+            img_cat = torch.cat((recon_img.cpu(), bond_test_images), 2)
 
             vutils.save_image(
                 img_cat,
@@ -248,7 +257,7 @@ def train(args):
     vae_net.eval()
     with torch.no_grad():
         recon_img, _, _ = vae_net(test_images.to(device))
-        img_cat = torch.cat((recon_img.cpu(), test_images), 2)
+        img_cat = torch.cat((recon_img.cpu(), bond_test_images), 2)
 
         vutils.save_image(
             img_cat,

@@ -4,6 +4,7 @@ try:
     import cv2
     import numpy as np
     from PIL import Image
+    from icecream import ic
 
 except Exception as e:
     print(f"Some module are missing: {e}")
@@ -43,6 +44,34 @@ class MyDatasetPng:
         img = np.asarray(img, float) / 255.0
 
         return torch.from_numpy(np.expand_dims(img.copy(), 0)).float()
+
+
+class MyDatasetPngMixed:
+    """Class that generate a dataset for DataLoader module, given as input the paths of the .png files and the respective labels"""
+
+    def __init__(self, paths, resolution):
+        self.paths = paths
+        self.resolution = resolution
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, i):
+        img = cv2.imread(str(self.paths[i]), 0)
+        img = padding_image(img, self.resolution)
+        img = cv2.bitwise_not(img)
+        img = np.asarray(img, float) / 255.0
+
+        path = (self.paths[i]).with_stem(f"{self.paths[i].stem}_B")
+        img2 = cv2.imread(str(path), 0)
+        img2 = padding_image(img2, self.resolution)
+        img2 = cv2.bitwise_not(img2)
+        img2 = np.asarray(img2, float) / 255.0
+
+        return (
+            torch.from_numpy(np.expand_dims(img.copy(), 0)).float(),
+            torch.from_numpy(np.expand_dims(img2.copy(), 0)).float(),
+        )
 
 
 ## Feature extractor

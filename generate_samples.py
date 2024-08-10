@@ -9,9 +9,20 @@ try:
     import cv2
     from lib.networks import padding_image
     import numpy as np
+    import submitit
+    from omegaconf import open_dict, OmegaConf
+    from icecream import ic
 
 except Exception as e:
     print(f"Some module are missing from {__file__}: {e}\n")
+
+
+class SLURM_Trainer(object):
+    def __init__(self, args):
+        self.args = args
+
+    def __call__(self):
+        generate_single_image(self.args)
 
 
 def get_checkpoint(models_dir: Path) -> str:
@@ -34,6 +45,64 @@ def load_image(image_path: Path, resolution: int):
     img = np.asarray(img, float) / 255.0
 
     return torch.from_numpy(np.expand_dims(np.expand_dims(img.copy(), 0), 0)).float()
+
+
+@hydra.main(version_base="1.2", config_path="config", config_name="cfg")
+def main(args):
+    if args.verbose:
+        ic.enable()
+    else:
+        ic.disable()
+
+    if args.deterministic:
+        torch.manual_seed(42 if not args.random_seed else args.random_seed)
+        torch.cuda.manual_seed(42 if not args.random_seed else args.random_seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(42 if not args.random_seed else args.random_seed)
+
+    if args.matmul_precision == "highest":
+        torch.set_float32_matmul_precision("highest")
+    elif args.matmul_precision == "high":
+        torch.set_float32_matmul_precision("high")
+    elif args.matmul_precision == "medium":
+        torch.set_float32_matmul_precision("medium")
+
+    if args.slurm:
+        Path(args.slurm_output).mkdir(parents=True, exist_ok=True)
+        executor = submitit.AutoExecutor(
+            folder=args.slurm_output,
+            slurm_max_num_timeout=30,
+        )
+
+        executor.update_parameters(
+            mem_gb=12 * args.slurm_ngpus,
+            gpus_per_node=args.slurm_ngpus,
+            tasks_per_node=args.slurm_ngpus,
+            cpus_per_task=2 if not args.slurm_ncpus else args.slurm_ncpus,
+            nodes=args.slurm_nnodes,
+            timeout_min=2800,
+            slurm_partition=args.slurm_partition,
+            slurm_exclude=args.slurm_exclude,
+        )
+
+        if args.slurm_nodelist:
+            executor.update_parameters(
+                slurm_additional_parameters={"nodelist": f"{args.slurm_nodelist}"}
+            )
+
+        executor.update_parameters(name="GEN_DG")
+        trainer = SLURM_Trainer(args)
+        job = executor.submit(trainer)
+        print(f"Submitted job_id: {job.job_id} for GEN_DG")
+
+        with open_dict(args):
+            args.job_id = job.job_id
+
+    else:
+        with open_dict(args):
+            args.job_id = None
+        generate_single_image(args)
 
 
 @hydra.main(version_base="1.2", config_path="config", config_name="cfg")
@@ -102,50 +171,70 @@ def generate_single_image(args):
     Path(args.model_out_path).mkdir(exist_ok=True, parents=True)
     Path(args.results_out_path).mkdir(exist_ok=True, parents=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda")
 
     img = load_image(
-        "/home/tom/git_workspace/CVAE_Graphene/DefectedGraphene/data/training_dataset2/test/graphene_152268_opt.png",
+        "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/opt_graphene.png",
         resolution=args.train.image_size,
     )
     img = img.to(device)
     print(img.shape)
 
     # Create VAE network
-    vae_net = VAE(
+    vae_atoms = VAE(
         channel_in=1,
         ch=args.vae.ch,
         blocks=tuple(args.vae.blocks),
         latent_channels=args.vae.latent_channels,
+        deep_model=args.vae.deep_model,
     ).to(device)
+
+    vae_bonds = VAE(
+        channel_in=1,
+        ch=args.vae.ch,
+        blocks=tuple(args.vae.blocks),
+        latent_channels=args.vae.latent_channels,
+        deep_model=args.vae.deep_model,
+    ).to(device)
+    ckpt = torch.load(
+        get_checkpoint(Path(args.mixed_model_out_path)), weights_only=True
+    )
+    vae_bonds.load_state_dict(ckpt["model_state_dict"])
+    vae_bonds.eval()
 
     # Carica il file salvato
     checkpoint = torch.load(
         get_checkpoint(Path(args.model_out_path)), weights_only=True
     )
     # Ripristina lo stato del modello e dell'ottimizzatore
-    vae_net.load_state_dict(checkpoint["model_state_dict"])
+    vae_atoms.load_state_dict(checkpoint["model_state_dict"])
+    vae_atoms.eval()
 
-    vae_net.eval()
-
-    _, mu, logvar = vae_net(img)
+    _, mu, logvar = vae_atoms(img)
 
     # Reparametrization trick per campionare dallo spazio latente
     std = torch.exp(0.5 * logvar)
 
-    scale_factor = 1.5
-    epsilon = torch.randn_like(std) * scale_factor
+    # scale_factor = 1.5
+    # epsilon = torch.randn_like(std) * scale_factor
 
-    noise_factor = 0.1
-    mu_noisy = mu + noise_factor * torch.randn_like(mu)
+    noise_factor = 0.8
+    # mu_noisy = mu + noise_factor * torch.randn_like(mu)
 
-    z = mu_noisy + std * epsilon
+    # z = mu_noisy + std * epsilon
+
+    epsilon = torch.randn_like(std)
+    z = mu + std * epsilon
+    z = z + 1.0 * torch.randn_like(z)
 
     print(z.shape)
     print(torch.max(z))
     print(torch.min(z))
 
-    recon_img = vae_net.decoder(z)
+    recon_img = vae_atoms.decoder(z)
+    recon_img = (recon_img >= 0.5).float()
+    print(torch.max(recon_img))
+    print(torch.min(recon_img))
 
     vutils.save_image(
         recon_img.cpu(),
@@ -158,8 +247,16 @@ def generate_single_image(args):
         normalize=True,
     )
 
+    final_img, _, _ = vae_bonds(recon_img)
+    final_img = (final_img >= 0.5).float()
+    vutils.save_image(
+        final_img.cpu(),
+        f"{args.results_out_path}/final.png",
+        normalize=True,
+    )
+
     # Utils.sharpened_image(Path(f"{args.results_out_path}/single_generated.png"))
 
 
 if __name__ == "__main__":
-    generate_single_image()
+    main()

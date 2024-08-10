@@ -7,7 +7,11 @@ try:
     from pathlib import Path
     from chemfiles import Trajectory
     from PIL import Image, ImageDraw
+    from lib.networks import MyDatasetPng
     import os
+    from torch.utils.data import DataLoader
+    import torchvision.transforms as transforms
+    import cv2
 
 except Exception as e:
     print("Some module are missing {}".format(e))
@@ -58,7 +62,7 @@ class Utils:
         if (first_atom == "C" and second_atom == "C") or (
             second_atom == "C" and first_atom == "C"
         ):
-            return "red"
+            return "white"
         elif (first_atom == "C" and second_atom == "O") or (
             second_atom == "O" and first_atom == "C"
         ):
@@ -66,7 +70,7 @@ class Utils:
         elif (first_atom == "O" and second_atom == "H") or (
             second_atom == "H" and first_atom == "O"
         ):
-            return "white"
+            return "red"
         elif (first_atom == "C" and second_atom == "H") or (
             second_atom == "H" and first_atom == "C"
         ):
@@ -189,11 +193,93 @@ class Utils:
         for image_path in tqdm(test_images):
             shutil.copy(image_path, test_path.joinpath(image_path.name))
 
+    @staticmethod
+    def get_dataloaders(dataset_path: Path, batch_size: int, resolution: int):
+        if not dataset_path.is_dir():
+            raise Exception(f"{dataset_path} is not a directory!")
+
+        train_path = dataset_path.joinpath("train")
+        val_path = dataset_path.joinpath("val")
+        test_path = dataset_path.joinpath("test")
+
+        data_transform = transforms.Compose(
+            [
+                transforms.Resize((resolution, resolution)),
+                transforms.ToTensor(),
+            ]
+        )
+
+        train_paths = [
+            f
+            for f in train_path.iterdir()
+            if f.suffix.lower() in Utils.IMAGE_EXTENSIONS
+        ]
+        test_paths = [
+            f for f in test_path.iterdir() if f.suffix.lower() in Utils.IMAGE_EXTENSIONS
+        ]
+        val_paths = [
+            f for f in val_path.iterdir() if f.suffix.lower() in Utils.IMAGE_EXTENSIONS
+        ]
+
+        train_data = MyDatasetPng(
+            train_paths,
+            resolution=resolution,  # transforms=data_transform
+        )
+        test_data = MyDatasetPng(
+            test_paths,
+            resolution=resolution,  # transforms=data_transform
+        )
+        val_data = MyDatasetPng(
+            val_paths,
+            resolution=resolution,  # transforms=data_transform
+        )
+
+        trainloader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+        testloader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+        valloader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+
+        return trainloader, testloader, valloader
+
+    @staticmethod
+    def apply_threshold(image_path: Path, threshold: int = 180, dpath: Path = None):
+        if dpath is None:
+            dpath = image_path.parent.joinpath(f"th_{image_path.name}")
+        # Carica l'immagine in scala di grigi
+        image = Image.open(image_path).convert("L")
+
+        # Converti l'immagine in un array numpy
+        image_array = np.array(image)
+
+        # Applica il threshold: se il pixel è maggiore del threshold, diventa nero (0), altrimenti bianco (255)
+        binary_image_array = np.where(image_array < threshold, 0, 255).astype(np.uint8)
+
+        # Converti l'array di nuovo in un'immagine
+        binary_image = Image.fromarray(binary_image_array)
+
+        binary_image.save(dpath)
+
+    @staticmethod
+    def sharpened_image(image_path: Path, dpath: Path = None):
+        if dpath is None:
+            dpath = image_path.parent.joinpath(f"th_{image_path.name}")
+
+        image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
+
+        # Definisci un kernel di sharpening
+        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+
+        # Applica il filtro di sharpening
+        sharpened_image = cv2.filter2D(image, -1, kernel)
+
+        cv2.imwrite(str(dpath), sharpened_image)
+
 
 if __name__ == "__main__":
     # max_dim = [39.53476932, 34.27629786]
     # xyz_files_path = Path("../data/xyz_files")
     # images_path = Path("../data/images")
     # Utils.from_xyz_to_png(xyz_files_path, images_path, max_dim=max_dim, multiplier=6)
-    # Utils.split_images(images_path)
+    # Utils.split_images(
+    #     images_path, dataset_path=images_path.parent.joinpath("training_dataset")
+    # )
     pass

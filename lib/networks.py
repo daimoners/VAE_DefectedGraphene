@@ -9,14 +9,9 @@ except Exception as e:
     print(f"Some module are missing: {e}")
 
 
-def padding_image(image):
+def padding_image(image, size=160):
     h = image.shape[0]
     w = image.shape[1]
-
-    if h >= w:
-        size = h + 1
-    else:
-        size = w + 1
 
     top = round((size - h) / 2)
     bottom = size - (h + top)
@@ -34,37 +29,20 @@ def padding_image(image):
 class MyDatasetPng:
     """Class that generate a dataset for DataLoader module, given as input the paths of the .png files and the respective labels"""
 
-    def __init__(self, paths, resolution, transforms):
+    def __init__(self, paths, resolution):
         self.paths = paths
         self.resolution = resolution
-        self.transform = transforms
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, i):
         img = cv2.imread(str(self.paths[i]), 0)
-        img = padding_image(img)
+        img = padding_image(img, self.resolution)
         img = cv2.bitwise_not(img)
         img = np.asarray(img, float) / 255.0
 
-        # Converti l'immagine da numpy array a PIL Image
-        if len(img.shape) == 2:
-            img = Image.fromarray(
-                (img * 255).astype(np.uint8), mode="L"
-            )  # Immagine in scala di grigi
-        elif len(img.shape) == 3 and img.shape[2] == 3:
-            img = Image.fromarray(
-                (img * 255).astype(np.uint8), mode="RGB"
-            )  # Immagine RGB
-        else:
-            raise Exception("Wrong dimensions for the input images\n")
-
-        # Applica le trasformazioni se definite
-        if self.transform:
-            img = self.transform(img)
-
-        return img
+        return torch.from_numpy(np.expand_dims(img.copy(), 0)).float()
 
 
 ## Feature extractor

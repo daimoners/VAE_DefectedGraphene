@@ -1,18 +1,36 @@
-dataset_path: ./data/training_dataset
+dataset_path: ./data/training_dataset2
 model_out_path: ./models
 results_out_path: ./results
+matmul_precision: highest
+deterministic: True
+random_seed: 42
 
 train:
   batch_size: 32
-  image_size: 96
+  image_size: 128
   lr: 0.0001
   nepoch: 800
   early_stop_patience: 80
   scheduler_patience: 50
 
 vae:
-  ch: 32
+  ch: 64
   blocks: [1, 2, 4, 8]
-  latent_channels: 1500
+  latent_channels: 512
+  deep_model: True
 
 telegram_bot: True
+
+# SLURM
+slurm: False
+slurm_ncpus:
+slurm_ngpus: 2
+slurm_nnodes: 1
+slurm_nodelist:
+slurm_partition: long
+slurm_timeout: 2800
+slurm_output: outputs/slurm_out
+slurm_exclude: gn05,gn06,gn07,wn01,wn02,wn03,wn04
+
+# ICECREAM VERBOSITY
+verbose: True

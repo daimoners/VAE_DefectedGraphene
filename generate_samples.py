@@ -4,7 +4,11 @@ try:
     from tqdm import tqdm
     from lib.networks import VAE
     from pathlib import Path
-    from lib.utils import Utils
+    from lib.utils import (
+        Utils,
+        convert_isolated_black_pixels,
+        draw_graphene_lattice,
+    )
     import hydra
     import cv2
     from lib.networks import padding_image
@@ -189,19 +193,6 @@ def generate_single_image(args):
         deep_model=args.vae.deep_model,
     ).to(device)
 
-    vae_bonds = VAE(
-        channel_in=1,
-        ch=args.vae.ch,
-        blocks=tuple(args.vae.blocks),
-        latent_channels=args.vae.latent_channels,
-        deep_model=args.vae.deep_model,
-    ).to(device)
-    ckpt = torch.load(
-        get_checkpoint(Path(args.mixed_model_out_path)), weights_only=True
-    )
-    vae_bonds.load_state_dict(ckpt["model_state_dict"])
-    vae_bonds.eval()
-
     # Carica il file salvato
     checkpoint = torch.load(
         get_checkpoint(Path(args.model_out_path)), weights_only=True
@@ -225,7 +216,7 @@ def generate_single_image(args):
 
     epsilon = torch.randn_like(std)
     z = mu + std * epsilon
-    z = z + 1.0 * torch.randn_like(z)
+    z = z + 0.9 * torch.randn_like(z)
 
     print(z.shape)
     print(torch.max(z))
@@ -246,16 +237,12 @@ def generate_single_image(args):
         f"{args.results_out_path}/single_original.png",
         normalize=True,
     )
+    draw_graphene_lattice(f"{args.results_out_path}/single_generated.png")
 
-    final_img, _, _ = vae_bonds(recon_img)
-    final_img = (final_img >= 0.5).float()
-    vutils.save_image(
-        final_img.cpu(),
+    convert_isolated_black_pixels(
+        f"{args.results_out_path}/single_generated_with_bonds.png",
         f"{args.results_out_path}/final.png",
-        normalize=True,
     )
-
-    # Utils.sharpened_image(Path(f"{args.results_out_path}/single_generated.png"))
 
 
 if __name__ == "__main__":

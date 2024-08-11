@@ -1,6 +1,5 @@
 dataset_path: ./data/training_dataset_240A
 model_out_path: ./models
-mixed_model_out_path: ./models_mixed
 results_out_path: ./results
 matmul_precision: highest
 deterministic: True

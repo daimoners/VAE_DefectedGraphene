@@ -7,11 +7,15 @@ try:
     from pathlib import Path
     from chemfiles import Trajectory
     from PIL import Image, ImageDraw
-    from lib.networks import MyDatasetPng, MyDatasetPngMixed
     import os
     from torch.utils.data import DataLoader
     import torchvision.transforms as transforms
     import cv2
+    from numba import njit
+    from scipy.spatial import distance
+    import math
+    from icecream import ic
+    from lib.networks import MyDatasetPng, MyDatasetPngMixed
 
 except Exception as e:
     print("Some module are missing {}".format(e))
@@ -423,6 +427,160 @@ class Utils:
             )
 
 
+@njit
+def process_image(pixels, width, height):
+    # Scorriamo tutti i pixel dell'immagine
+    for y in range(1, height - 1):
+        for x in range(1, width - 1):
+            # Controlla se il pixel attuale è nero
+            if pixels[y, x] == 0:
+                # Controlla i pixel adiacenti
+                if (
+                    pixels[y - 1, x] == 255
+                    and pixels[y + 1, x] == 255
+                    and pixels[y, x - 1] == 255
+                    and pixels[y, x + 1] == 255
+                    and pixels[y - 1, x - 1] == 255
+                    and pixels[y - 1, x + 1] == 255
+                    and pixels[y + 1, x - 1] == 255
+                    and pixels[y + 1, x + 1] == 255
+                ):
+                    # Se tutti i pixel adiacenti sono bianchi, cambia il pixel attuale in bianco
+                    pixels[y, x] = 255
+
+
+def convert_isolated_black_pixels(image_path, dpath):
+    # Apri l'immagine e convertila in scala di grigi
+    img = Image.open(image_path).convert("L")
+    pixels = np.array(img)
+
+    # Ottieni le dimensioni dell'immagine
+    height, width = pixels.shape
+
+    # Processa l'immagine con la funzione accelerata da Numba
+    process_image(pixels, width, height)
+
+    # Converti l'array modificato di nuovo in immagine
+    new_img = Image.fromarray(pixels)
+
+    new_img.save(dpath)
+
+
+def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
+
+    # Carica l'immagine
+    binary = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+    black_pixels = []
+    for y in range(binary.shape[0]):
+        for x in range(binary.shape[1]):
+            if binary[y, x] == 0:  # Se il valore del pixel è 0 (nero)
+                black_pixels.append((x, y))
+
+    # Converti i punti in un array numpy per calcolare le distanze
+    points = np.array(black_pixels)
+
+    # Traccia i legami tra i punti vicini
+    indices = []
+    for i, point in enumerate(points):
+        point_i = points[i]
+        for j in range(i + 1, len(points)):
+            point_j = points[j]
+
+            # Calcola la distanza euclidea tra i punti
+            dist = distance.euclidean(point_i, point_j)
+
+            # Se la distanza è inferiore o uguale al limite minimo
+            if dist <= min_bond_length:
+                # Imposta il raggio iniziale
+                radius = max_bond_length
+
+                # Riduci il raggio finché i vicini sono uguali
+                while True:
+                    neighbors_i = find_neighbors(points=points, idx=i, radius=radius)
+                    neighbors_j = find_neighbors(points=points, idx=j, radius=radius)
+
+                    # Se i vicini non sono uguali, esci dal ciclo
+                    if neighbors_i != neighbors_j:
+                        break
+
+                    # Riduci il raggio
+                    radius -= 1
+
+                    # Se il raggio diventa troppo piccolo, esci dal ciclo
+                    if radius < 0:
+                        radius = 0
+                        break
+
+                # Se il numero di vicini per il punto i è maggiore, aggiungi j agli indici
+                if neighbors_i > neighbors_j:
+                    indices.append(j)
+
+    points = np.delete(points, indices, axis=0)
+
+    # Crea una copia dell'immagine per disegnare i legami
+    img_with_bonds = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+
+    # Traccia i legami tra i punti vicini
+    for i, point in enumerate(points):
+        for j in range(i + 1, len(points)):
+            if (
+                min_bond_length
+                <= distance.euclidean(points[i], points[j])
+                <= max_bond_length
+            ):
+                cv2.line(
+                    img_with_bonds, tuple(points[i]), tuple(points[j]), (0, 0, 0), 1
+                )
+
+    # Salva l'immagine risultante
+    output_path = image_path.replace(".png", "_with_bonds.png")
+    cv2.imwrite(output_path, img_with_bonds)
+    print(f"Immagine con i legami salvata come: {output_path}")
+
+
+def find_average_distance(points, idx, radius):
+    # Lista per memorizzare le distanze ai vicini
+    p1 = points[idx]
+    distances = []
+
+    # Itera su tutti gli altri punti per trovare i vicini
+    for j, p2 in enumerate(points):
+        if j != idx:
+            # Calcola la distanza euclidea tra p1 e p2
+            distance = np.linalg.norm(p1 - p2)
+
+            # Se la distanza è entro il raggio specificato, aggiungi alla lista
+            if distance <= radius:
+                distances.append(distance)
+
+    # Calcola la distanza media, se ci sono vicini
+    if distances:
+        average_distance = np.mean(distances)
+    else:
+        average_distance = 0  # Se non ci sono vicini, la distanza media è 0
+
+    return average_distance
+
+
+def find_neighbors(points, idx, radius):
+    # Lista per memorizzare le distanze ai vicini
+    p1 = points[idx]
+    neighbors = 0
+
+    # Itera su tutti gli altri punti per trovare i vicini
+    for j, p2 in enumerate(points):
+        if j != idx:
+            # Calcola la distanza euclidea tra p1 e p2
+            distance = np.linalg.norm(p1 - p2)
+
+            # Se la distanza è entro il raggio specificato, aggiungi alla lista
+            if distance <= radius:
+                neighbors += 1
+
+    return neighbors
+
+
 if __name__ == "__main__":
     # max_dim = [39.53476932, 34.27629786]
     # xyz_files_path = Path("../data/xyz_files")
@@ -431,9 +589,16 @@ if __name__ == "__main__":
     # Utils.split_images(
     #     images_path, dataset_path=images_path.parent.joinpath("training_dataset_A")
     # )
-    Utils.generate_mixed_dataset(
-        images_atoms=Path("../data/images_240A"),
-        images_bonds=Path("../data/images_240"),
-        dataset_path=Path("../data/training_dataset_mixed"),
+    # Utils.generate_mixed_dataset(
+    #     images_atoms=Path("../data/images_240A"),
+    #     images_bonds=Path("../data/images_240"),
+    #     dataset_path=Path("../data/training_dataset_mixed"),
+    # )
+    draw_graphene_lattice(
+        "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/single_generated.png"
+    )
+    convert_isolated_black_pixels(
+        "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/single_generated_with_bonds.png",
+        "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/final.png",
     )
     pass

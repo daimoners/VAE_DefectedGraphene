@@ -1,6 +1,6 @@
 dataset_path: ./data/training_dataset_240A
 model_out_path: ./models
-results_out_path: ./results
+results_out_path: ./results/generated
 matmul_precision: highest
 deterministic: True
 random_seed: 42

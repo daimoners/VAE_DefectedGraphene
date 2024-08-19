@@ -2,12 +2,13 @@ try:
     import torch
     import torchvision.utils as vutils
     from tqdm import tqdm
-    from lib.networks import VAE
+    from lib.networks import VAE, get_resnet_model
     from pathlib import Path
     from lib.utils import (
         Utils,
         convert_isolated_black_pixels,
         draw_graphene_lattice,
+        new_draw_graphene_lattice,
     )
     import hydra
     import cv2
@@ -16,6 +17,9 @@ try:
     import submitit
     from omegaconf import open_dict, OmegaConf
     from icecream import ic
+    import os
+    from PIL import Image
+    from torchvision import transforms
 
 except Exception as e:
     print(f"Some module are missing from {__file__}: {e}\n")
@@ -26,7 +30,7 @@ class SLURM_Trainer(object):
         self.args = args
 
     def __call__(self):
-        generate_single_image(self.args)
+        generate_multiple_images(self.args)
 
 
 def get_checkpoint(models_dir: Path) -> str:
@@ -237,12 +241,120 @@ def generate_single_image(args):
         f"{args.results_out_path}/single_original.png",
         normalize=True,
     )
-    draw_graphene_lattice(f"{args.results_out_path}/single_generated.png")
+    new_draw_graphene_lattice(f"{args.results_out_path}/single_generated.png")
 
     convert_isolated_black_pixels(
         f"{args.results_out_path}/single_generated_with_bonds.png",
         f"{args.results_out_path}/final.png",
     )
+
+
+@hydra.main(version_base="1.2", config_path="config", config_name="cfg")
+def generate_multiple_images(args):
+    Path(args.model_out_path).mkdir(exist_ok=True, parents=True)
+    Path(args.results_out_path).mkdir(exist_ok=True, parents=True)
+
+    n_images = 500
+
+    device = torch.device("cuda")
+
+    img = load_image(
+        "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/opt_graphene.png",
+        resolution=args.train.image_size,
+    )
+    img = img.to(device)
+    print(img.shape)
+
+    # Create VAE network
+    vae_atoms = VAE(
+        channel_in=1,
+        ch=args.vae.ch,
+        blocks=tuple(args.vae.blocks),
+        latent_channels=args.vae.latent_channels,
+        deep_model=args.vae.deep_model,
+    ).to(device)
+
+    # Carica il file salvato
+    checkpoint = torch.load(
+        get_checkpoint(Path(args.model_out_path)), weights_only=True
+    )
+    # Ripristina lo stato del modello e dell'ottimizzatore
+    vae_atoms.load_state_dict(checkpoint["model_state_dict"])
+    vae_atoms.eval()
+
+    _, mu, logvar = vae_atoms(img)
+
+    resnet_ckpt = torch.load(
+        str(
+            Path("./data/discriminator").joinpath(
+                "model", "best_model_epoch_168_vloss_0.0488.pt"
+            )
+        )
+    )
+    resnet = get_resnet_model()
+    resnet.load_state_dict(resnet_ckpt["model_state_dict"])
+    resnet.eval()
+
+    CLASSES = resnet_ckpt["class_names"]
+
+    data_augmentation_test = transforms.Compose(
+        [
+            transforms.Resize(args.train.image_size),
+            transforms.Grayscale(num_output_channels=1),  # Converti in grayscale
+            transforms.ToTensor(),
+        ]
+    )
+
+    pbar = tqdm(total=n_images)
+    i = 0
+    while i < n_images:
+
+        # Reparametrization trick per campionare dallo spazio latente
+        std = torch.exp(0.5 * logvar)
+        epsilon = torch.randn_like(std)
+
+        z = mu + std * epsilon
+        z = z + 0.9 * torch.randn_like(z)
+
+        recon_img = vae_atoms.decoder(z)
+        recon_img = (recon_img >= 0.5).float()
+
+        vutils.save_image(
+            recon_img.cpu(),
+            f"{args.results_out_path}/generated_{i}.png",
+            normalize=True,
+        )
+
+        new_draw_graphene_lattice(f"{args.results_out_path}/generated_{i}.png")
+
+        convert_isolated_black_pixels(
+            f"{args.results_out_path}/generated_{i}_with_bonds.png",
+            f"{args.results_out_path}/generated_{i}.png",
+        )
+        os.remove(f"{args.results_out_path}/generated_{i}_with_bonds.png")
+
+        img = Image.open(str(f"{args.results_out_path}/generated_{i}.png"))
+        img_pytorch = data_augmentation_test(img)
+        img_pytorch = torch.unsqueeze(img_pytorch, dim=0)
+
+        with torch.no_grad():
+            output = np.squeeze(resnet(img_pytorch))
+            # class_prediction = int(torch.round(torch.sigmoid(output)))
+
+            if torch.sigmoid(output) >= 0.7:
+                class_prediction = 1
+            else:
+                class_prediction = 0
+
+            if CLASSES[class_prediction] == "broken":
+                os.remove(f"{args.results_out_path}/generated_{i}.png")
+            elif CLASSES[class_prediction] == "ok":
+                i += 1
+                pbar.update(1)
+            else:
+                raise Exception(f"Wrong classes for: {CLASSES[class_prediction]}")
+
+    pbar.close()
 
 
 if __name__ == "__main__":

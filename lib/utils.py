@@ -491,7 +491,7 @@ def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
             dist = distance.euclidean(point_i, point_j)
 
             # Se la distanza è inferiore o uguale al limite minimo
-            if dist <= min_bond_length:
+            if dist < min_bond_length:
                 # Imposta il raggio iniziale
                 radius = max_bond_length
 
@@ -515,6 +515,8 @@ def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
                 # Se il numero di vicini per il punto i è maggiore, aggiungi j agli indici
                 if neighbors_i > neighbors_j:
                     indices.append(j)
+                elif neighbors_j > neighbors_i:
+                    indices.append(i)
 
     points = np.delete(points, indices, axis=0)
 
@@ -532,6 +534,99 @@ def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
                 cv2.line(
                     img_with_bonds, tuple(points[i]), tuple(points[j]), (0, 0, 0), 1
                 )
+
+    # Salva l'immagine risultante
+    output_path = image_path.replace(".png", "_with_bonds.png")
+    cv2.imwrite(output_path, img_with_bonds)
+    print(f"Immagine con i legami salvata come: {output_path}")
+
+
+def new_draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
+    # Carica l'immagine
+    binary = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+    black_pixels = []
+    for y in range(binary.shape[0]):
+        for x in range(binary.shape[1]):
+            if binary[y, x] == 0:  # Se il valore del pixel è 0 (nero)
+                black_pixels.append((x, y))
+
+    # Converti i punti in un array numpy per calcolare le distanze
+    points = np.array(black_pixels)
+
+    # Traccia i legami tra i punti vicini
+    indices = []
+    for i, point in enumerate(points):
+        point_i = points[i]
+        for j in range(i + 1, len(points)):
+            point_j = points[j]
+
+            # Calcola la distanza euclidea tra i punti
+            dist = distance.euclidean(point_i, point_j)
+
+            # Se la distanza è inferiore o uguale al limite minimo
+            if dist < min_bond_length:
+                # Imposta il raggio iniziale
+                radius = max_bond_length
+
+                # Riduci il raggio finché i vicini sono uguali
+                while True:
+                    neighbors_i = find_neighbors(points=points, idx=i, radius=radius)
+                    neighbors_j = find_neighbors(points=points, idx=j, radius=radius)
+
+                    # Se i vicini non sono uguali, esci dal ciclo
+                    if neighbors_i != neighbors_j:
+                        break
+
+                    # Riduci il raggio
+                    radius -= 1
+
+                    # Se il raggio diventa troppo piccolo, esci dal ciclo
+                    if radius < 0:
+                        radius = 0
+                        break
+
+                # Se il numero di vicini per il punto i è maggiore, aggiungi j agli indici
+                if neighbors_i > neighbors_j:
+                    indices.append(j)
+                elif neighbors_j > neighbors_i:
+                    indices.append(i)
+
+    points = np.delete(points, indices, axis=0)
+
+    # Dizionario per contare il numero di legami per ogni punto
+    bonds_count = {i: 0 for i in range(len(points))}
+
+    # Lista per memorizzare i legami (collegamenti validi tra i punti)
+    valid_bonds = []
+
+    # Traccia i legami tra i punti vicini
+    for i, point_i in enumerate(points):
+        for j in range(i + 1, len(points)):
+            point_j = points[j]
+
+            # Calcola la distanza euclidea tra i punti
+            dist = distance.euclidean(point_i, point_j)
+
+            # Se la distanza è compresa tra il limite minimo e massimo
+            if min_bond_length <= dist <= max_bond_length:
+                # Aggiungi il legame se valido
+                bonds_count[i] += 1
+                bonds_count[j] += 1
+                valid_bonds.append((i, j))
+                if (point_i[0] <= 8 or point_i[0] >= 230) or (
+                    point_j[0] <= 8 or point_j[0] >= 230
+                ):
+                    bonds_count[i] += 1
+                    bonds_count[j] += 1
+
+    # Crea una copia dell'immagine per disegnare i legami
+    img_with_bonds = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+
+    # Disegna i legami tra i punti che hanno almeno 2 legami
+    for i, j in valid_bonds:
+        if bonds_count[i] >= 2 and bonds_count[j] >= 2:
+            cv2.line(img_with_bonds, tuple(points[i]), tuple(points[j]), (0, 0, 0), 1)
 
     # Salva l'immagine risultante
     output_path = image_path.replace(".png", "_with_bonds.png")
@@ -594,7 +689,7 @@ if __name__ == "__main__":
     #     images_bonds=Path("../data/images_240"),
     #     dataset_path=Path("../data/training_dataset_mixed"),
     # )
-    draw_graphene_lattice(
+    new_draw_graphene_lattice(
         "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/single_generated.png"
     )
     convert_isolated_black_pixels(

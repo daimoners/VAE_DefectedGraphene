@@ -9,6 +9,7 @@ try:
         convert_isolated_black_pixels,
         draw_graphene_lattice,
         new_draw_graphene_lattice,
+        new_new_draw_graphene_lattice,
     )
     import hydra
     import cv2
@@ -31,6 +32,7 @@ class SLURM_Trainer(object):
 
     def __call__(self):
         generate_multiple_images(self.args)
+        # generate_single_image(self.args)
 
 
 def get_checkpoint(models_dir: Path) -> str:
@@ -241,7 +243,7 @@ def generate_single_image(args):
         f"{args.results_out_path}/single_original.png",
         normalize=True,
     )
-    new_draw_graphene_lattice(f"{args.results_out_path}/single_generated.png")
+    new_new_draw_graphene_lattice(f"{args.results_out_path}/single_generated.png")
 
     convert_isolated_black_pixels(
         f"{args.results_out_path}/single_generated_with_bonds.png",
@@ -325,7 +327,7 @@ def generate_multiple_images(args):
             normalize=True,
         )
 
-        new_draw_graphene_lattice(f"{args.results_out_path}/generated_{i}.png")
+        new_new_draw_graphene_lattice(f"{args.results_out_path}/generated_{i}.png")
 
         convert_isolated_black_pixels(
             f"{args.results_out_path}/generated_{i}_with_bonds.png",
@@ -341,7 +343,7 @@ def generate_multiple_images(args):
             output = np.squeeze(resnet(img_pytorch))
             # class_prediction = int(torch.round(torch.sigmoid(output)))
 
-            if torch.sigmoid(output) >= 0.7:
+            if torch.sigmoid(output) >= 0.85:
                 class_prediction = 1
             else:
                 class_prediction = 0

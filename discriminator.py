@@ -21,6 +21,10 @@ try:
     from icecream import ic
     from omegaconf import open_dict
     import torchvision.models as models
+    import pandas as pd
+    from sklearn.metrics import confusion_matrix
+    import seaborn as sns
+    from matplotlib.colors import LinearSegmentedColormap
 
 except Exception as e:
     print(f"Some module are missing from {__file__}: {e}\n")
@@ -44,6 +48,23 @@ BATCH_SIZE = 32
 EPOCHS = 300
 LEARNING_RATE = 0.001
 NUM_WORKERS = 6
+
+daimon_colors = ["#F0741E", "#276CB3"]
+custom_cmap = LinearSegmentedColormap.from_list(
+    "custom_cmap", ["#ffff", daimon_colors[1]]
+)
+
+
+def get_best_model_path(models_path: Path):
+    models = [
+        f
+        for f in models_path.iterdir()
+        if (f.suffix.lower() == ".pt" and f.stem.startswith("best_model_epoch"))
+    ]
+    if len(models) > 1:
+        raise Exception(f"Error, {len(models)} best models found!")
+    else:
+        return models[0]
 
 
 def delete_old_models(models_path: Path):
@@ -281,9 +302,14 @@ def train(
     lowest_val_loss = float("inf")
     start = time.time()
 
+    train_loss_log = []
+    val_loss_log = []
+
     for epoch in range(EPOCHS):
         print(f"Epoch {epoch+1} of {EPOCHS}")
-        training_step(model, train_dataloader, loss_function, optimizer, DEVICE_NAME)
+        train_epoch_loss = training_step(
+            model, train_dataloader, loss_function, optimizer, DEVICE_NAME
+        )
         val_epoch_loss = validation_step(
             model, val_dataloader, loss_function, optimizer, DEVICE_NAME
         )
@@ -295,8 +321,11 @@ def train(
 
         print(f"Elapsed time: {(time.time()-start)/60:.3f} minutes\n")
 
+        train_loss_log.append(train_epoch_loss)
+        val_loss_log.append(val_epoch_loss)
     end = time.time()
-    train_time = end - start
+    loss_df = pd.DataFrame({"train_loss": train_loss_log, "val_loss": val_loss_log})
+    loss_df.to_csv("./discriminator_train_val_loss.csv", index=False)
     print(f"{(end-start)/60:.3f} minutes")
 
 
@@ -420,7 +449,7 @@ def discriminator(args):
     # )
     model = get_resnet_model()
     model.load_state_dict(
-        torch.load(str(package_path.joinpath("model", "best_model.pt")))[
+        torch.load(str(get_best_model_path(package_path.joinpath("model"))))[
             "model_state_dict"
         ]
     )
@@ -437,30 +466,95 @@ def discriminator(args):
         x for x in test_path.joinpath("ok").iterdir() if x.suffix in IMAGE_EXTENSIONS
     ]
 
-    samples = [*samples_broken, *samples_ok]
+    # Inizializza liste per le etichette e le predizioni
+    y_true = []
+    y_pred = []
 
-    i = 0
-    for file in random.sample(samples, k=10) if len(samples) > 10 else samples:
+    # Definisci il mapping delle etichette
+    labels_map = {"broken": 0, "ok": 1}
 
-        img = Image.open(str(file))
-        img_pytorch = data_augmentation_test(img)
-        img_pytorch = torch.unsqueeze(img_pytorch, dim=0)
+    # Calcola le predizioni per ogni immagine nella cartella di test
+    for label, samples in [("broken", samples_broken), ("ok", samples_ok)]:
+        for img_path in samples:
+            # Carica e preprocessa l'immagine
+            img = Image.open(str(img_path))
+            img_pytorch = data_augmentation_test(img)  # aggiungi la dimensione batch
+            img_pytorch = torch.unsqueeze(img_pytorch, dim=0)
 
-        with torch.no_grad():
-            if BINARY:
+            # Ottieni la predizione dal modello
+            with torch.no_grad():
                 output = np.squeeze(model(img_pytorch))
-                class_prediction = int(torch.round(torch.sigmoid(output)))
-            else:
-                output = model(img_pytorch)
-                class_prediction = torch.argmax(output, dim=1)
+                class_prediction = int(
+                    torch.round(torch.sigmoid(output))
+                )  # classe predetta
 
-        plt.figure()
-        plt.title(f"{CLASSES[class_prediction]}")
-        plt.imshow(img)
-        plt.savefig(f"{package_path.joinpath('results',f'results_{i}.png')}")
-        plt.close()
+            # Aggiungi le etichette vera e predetta
+            y_true.append(labels_map[label])
+            y_pred.append(class_prediction)
 
-        i += 1
+    # Genera e mostra la confusion matrix
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    np.savetxt(f"./results/cmatrix.txt", cm)
+    labels = ["Broken", "OK"]
+
+    plt.figure(figsize=(7, 6))
+    ax = sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap=custom_cmap,
+        cbar=True,
+        linewidths=0.5,
+        linecolor="black",
+        square=True,
+        vmin=0,
+        vmax=np.max(cm),
+    )
+    plt.xlabel("Predicted", fontsize=23)
+    plt.ylabel("Actual", fontsize=23)
+
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=15)
+
+    ax.set_xticklabels(labels, fontsize=17)
+    ax.set_yticklabels(labels, fontsize=17)
+
+    for _, spine in ax.spines.items():
+        spine.set_visible(True)
+        spine.set_linewidth(0.5)
+
+    plt.tight_layout()
+    plt.tick_params(axis="both", which="major")
+    plt.savefig(
+        f"./results/cmatrix.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    # samples = [*samples_broken, *samples_ok]
+
+    # i = 0
+    # for file in random.sample(samples, k=10) if len(samples) > 10 else samples:
+
+    #     img = Image.open(str(file))
+    #     img_pytorch = data_augmentation_test(img)
+    #     img_pytorch = torch.unsqueeze(img_pytorch, dim=0)
+
+    #     with torch.no_grad():
+    #         if BINARY:
+    #             output = np.squeeze(model(img_pytorch))
+    #             class_prediction = int(torch.round(torch.sigmoid(output)))
+    #         else:
+    #             output = model(img_pytorch)
+    #             class_prediction = torch.argmax(output, dim=1)
+
+    #     plt.figure()
+    #     plt.title(f"{CLASSES[class_prediction]}")
+    #     plt.imshow(img)
+    #     plt.savefig(f"{package_path.joinpath('results',f'results_{i}.png')}")
+    #     plt.close()
+
+    #     i += 1
 
 
 if __name__ == "__main__":

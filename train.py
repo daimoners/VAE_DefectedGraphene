@@ -14,6 +14,7 @@ try:
     from icecream import ic
     import submitit
     from omegaconf import open_dict, OmegaConf
+    import pandas as pd
 
 except Exception as e:
     print(f"Some module are missing from {__file__}: {e}\n")
@@ -123,7 +124,9 @@ def train(args):
         optimizer, mode="min", patience=scheduler_patience
     )
     # Loss function
-    loss_log = []
+    train_loss_log = []
+    epoch_val_loss = []
+    epoch_train_loss = []
     val_loss_log = []
 
     lowest_val_loss = np.inf
@@ -161,7 +164,7 @@ def train(args):
 
             # print(loss)
 
-            loss_log.append(loss.item())
+            train_loss_log.append(loss.item())
             vae_net.zero_grad()
             loss.backward()
             optimizer.step()
@@ -169,6 +172,8 @@ def train(args):
             pbar_batches.update(1)
             pbar_batches.set_postfix(loss=loss.item())
         pbar_batches.close()
+
+        epoch_train_loss.append(np.mean(train_loss_log))
 
         # In eval mode the model will use mu as the encoding instead of sampling from the distribution
         vae_net.eval()
@@ -202,6 +207,7 @@ def train(args):
                 pbar_batches.set_postfix(loss=loss.item())
         pbar_batches.close()
 
+        epoch_val_loss.append(np.mean(val_loss_log))
         scheduler.step(np.mean(val_loss_log))
 
         if np.mean(val_loss_log) < lowest_val_loss:
@@ -209,7 +215,7 @@ def train(args):
             torch.save(
                 {
                     "epoch": epoch,
-                    "loss_log": loss_log,
+                    "val_loss_log": np.mean(val_loss_log),
                     "model_state_dict": vae_net.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                 },
@@ -236,12 +242,14 @@ def train(args):
 
         pbar_epochs.update(1)
         pbar_epochs.set_postfix(mean_loss=np.mean(val_loss_log))
+        val_loss_log.clear()
+        train_loss_log.clear()
     pbar_epochs.close()
 
     # TEST
     # Carica il file salvato
     checkpoint = torch.load(
-        f"{args.model_out_path}/val_loss_{lowest_val_loss:.4f}.pt", weights_only=True
+        f"{args.model_out_path}/val_loss_{lowest_val_loss:.4f}.pt", weights_only=False
     )
     # Ripristina lo stato del modello e dell'ottimizzatore
     vae_net.load_state_dict(checkpoint["model_state_dict"])
@@ -266,6 +274,9 @@ def train(args):
                 )
             },
         )
+
+    loss_df = pd.DataFrame({"train_loss": epoch_train_loss, "val_loss": epoch_val_loss})
+    loss_df.to_csv(f"{args.model_out_path}/train_val_loss.csv", index=False)
 
 
 if __name__ == "__main__":

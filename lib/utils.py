@@ -378,7 +378,7 @@ class Utils:
             raise FileNotFoundError
 
         if dataset_path is None:
-            dataset_path = images_path.parent.joinpath("training_dataset")
+            dataset_path = images_atoms.parent.joinpath("training_dataset")
 
         train_path = dataset_path.joinpath("train")
         train_path.mkdir(exist_ok=True, parents=True)
@@ -429,6 +429,7 @@ class Utils:
 
 @njit
 def process_image(pixels, width, height):
+    count = 0
     # Scorriamo tutti i pixel dell'immagine
     for y in range(1, height - 1):
         for x in range(1, width - 1):
@@ -446,7 +447,10 @@ def process_image(pixels, width, height):
                     and pixels[y + 1, x + 1] == 255
                 ):
                     # Se tutti i pixel adiacenti sono bianchi, cambia il pixel attuale in bianco
+                    count += 1
                     pixels[y, x] = 255
+
+    return count
 
 
 def convert_isolated_black_pixels(image_path, dpath):
@@ -458,12 +462,14 @@ def convert_isolated_black_pixels(image_path, dpath):
     height, width = pixels.shape
 
     # Processa l'immagine con la funzione accelerata da Numba
-    process_image(pixels, width, height)
+    count = process_image(pixels, width, height)
 
     # Converti l'array modificato di nuovo in immagine
     new_img = Image.fromarray(pixels)
 
     new_img.save(dpath)
+
+    return count
 
 
 def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
@@ -634,7 +640,9 @@ def new_draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11)
     print(f"Immagine con i legami salvata come: {output_path}")
 
 
-def new_new_draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
+def new_new_draw_graphene_lattice(
+    image_path, dpath=None, min_bond_length=7, max_bond_length=11
+):
     # Carica l'immagine
     binary = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
@@ -742,7 +750,10 @@ def new_new_draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length
             cv2.line(img_with_bonds, tuple(points[i]), tuple(points[j]), (0, 0, 0), 1)
 
     # Salva l'immagine risultante
-    output_path = image_path.replace(".png", "_with_bonds.png")
+    if dpath is None:
+        output_path = image_path.replace(".png", "_with_bonds.png")
+    else:
+        output_path = dpath
     cv2.imwrite(output_path, img_with_bonds)
     print(f"Immagine con i legami salvata come: {output_path}")
 
@@ -789,11 +800,53 @@ def find_neighbors(points, idx, radius):
     return neighbors
 
 
+def conta_pixel_neri(image_path):
+    # Carica l'immagine
+    if isinstance(image_path, Path):
+        img = Image.open(image_path).convert("L")  # Converti in scala di grigi
+    else:
+        img = image_path
+
+    # Converti l'immagine in un array NumPy
+    img_array = np.array(img)
+
+    # Conta i pixel neri (valore 0 in scala di grigi)
+    num_pixel_neri = np.sum(img_array == 0)
+
+    return num_pixel_neri
+
+
+def inverti_maschera_binaria(image_path):
+    # Carica l'immagine e convertila in scala di grigi
+    img = Image.open(image_path).convert("L")
+
+    # Converti l'immagine in un array NumPy
+    img_array = np.array(img)
+
+    # Inverti i colori (da 0 a 255 e viceversa)
+    img_inverted_array = 255 - img_array
+
+    # Converti l'array invertito in immagine
+    img_inverted = Image.fromarray(img_inverted_array)
+
+    return img_inverted
+
+
 if __name__ == "__main__":
     # max_dim = [39.53476932, 34.27629786]
+    max_dim = [34.61819255, 34.25591181]
     # xyz_files_path = Path("../data/xyz_files")
     # images_path = Path("../data/tmp")
-    # Utils.from_xyz_to_png(xyz_files_path, images_path, max_dim=max_dim, multiplier=6)
+    Utils.from_xyz_to_png(
+        Path(
+            "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/temp"
+        ),
+        Path(
+            "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/temp2"
+        ),
+        max_dim=max_dim,
+        multiplier=6,
+    )
     # Utils.split_images(
     #     images_path, dataset_path=images_path.parent.joinpath("training_dataset_A")
     # )
@@ -802,9 +855,9 @@ if __name__ == "__main__":
     #     images_bonds=Path("../data/images_240"),
     #     dataset_path=Path("../data/training_dataset_mixed"),
     # )
-    new_draw_graphene_lattice(
-        "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/generated/single_generated.png"
-    )
+    # new_draw_graphene_lattice(
+    #     "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/generated/single_generated.png"
+    # )
     # convert_isolated_black_pixels(
     #     "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/single_generated_with_bonds.png",
     #     "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/final.png",

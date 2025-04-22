@@ -1,7 +1,7 @@
 package_path: /home/tom/git_workspace/tesi/VAE_DefectedGraphene
-dataset_path: ./data/training_dataset
-model_out_path: ./models/VAE
-results_out_path: ./results/VAE
+dataset_path: ${package_path}/data/training_dataset
+model_out_path: ${package_path}/models/VAE
+results_out_path: ${package_path}/results/VAE
 matmul_precision: highest
 deterministic: True
 random_seed: 42

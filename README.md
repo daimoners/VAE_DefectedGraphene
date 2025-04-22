@@ -94,3 +94,11 @@ It will use the best models of the VAE and the discriminator, to generate 5000 s
 ### Comparison and analysis with the original dataset
 
 You can run each block of the `features_analysis.ipynb` jupyter notebook to extract the frequency features from the generated synthetic dataset and compare the original and generated datasets in the frequency domain. (The dataframe of the original dataset and the generated synthetic dataset presented in the thesis are already provided).
+
+## Acknowledgements
+
+This implementation is inspired by and partially based on the code from the following repository:
+
+- [**CNN-VAE**](https://github.com/LukeDitria/CNN-VAE): A well-structured implementation of convolutional VAEs that served as a foundation for building and adapting the model used in this project.
+
+We sincerely thank the authors for making their work publicly available and well-documented.

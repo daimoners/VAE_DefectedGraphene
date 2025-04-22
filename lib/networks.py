@@ -3,8 +3,6 @@ try:
     import torch
     import cv2
     import numpy as np
-    from PIL import Image
-    from icecream import ic
     import torchvision.models as models
 
 except Exception as e:
@@ -435,7 +433,6 @@ class Encoder(nn.Module):
 
         self.layer_blocks = nn.ModuleList([])
         for w_in, w_out in zip(widths_in, widths_out):
-
             if deep_model:
                 # Add an additional non down-sampling block before down-sampling
                 self.layer_blocks.append(

@@ -58,23 +58,9 @@ def image_loss(pred, target):
 
 
 def fourier_loss(recon_img, original_img):
-    """
-    Calcola la perdita basata sulla differenza tra le trasformate di Fourier
-    delle immagini ricostruite e originali.
-
-    Args:
-        recon_img (Tensor): Immagini ricostruite dal modello.
-        original_img (Tensor): Immagini originali di input.
-
-    Returns:
-        Tensor: La perdita calcolata nel dominio delle frequenze.
-    """
-    # Trasformata di Fourier 2D per le immagini ricostruite e originali
     recon_fft = torch.fft.fftn(recon_img, dim=(-2, -1))
     original_fft = torch.fft.fftn(original_img, dim=(-2, -1))
 
-    # Calcolo della differenza nel dominio delle frequenze
-    # Utilizzando L1 norm
     fourier_loss_value = torch.mean(torch.abs(recon_fft - original_fft))
 
     return fourier_loss_value

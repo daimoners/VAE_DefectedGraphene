@@ -7,23 +7,19 @@ try:
     from lib.utils import (
         Utils,
         convert_isolated_black_pixels,
-        draw_graphene_lattice,
-        new_draw_graphene_lattice,
         new_new_draw_graphene_lattice,
         conta_pixel_neri,
-        inverti_maschera_binaria,
     )
     import hydra
     import cv2
     from lib.networks import padding_image
     import numpy as np
     import submitit
-    from omegaconf import open_dict, OmegaConf
+    from omegaconf import open_dict
     from icecream import ic
     import os
     from PIL import Image
     from torchvision import transforms
-    from telegram_bot import send_message
     import time
 
 except Exception as e:
@@ -37,6 +33,19 @@ class SLURM_Trainer(object):
     def __call__(self):
         generate_multiple_images(self.args)
         # generate_single_image(self.args)
+
+
+def get_discriminator_checkpoint(models_dir: Path) -> str:
+    if not models_dir.is_dir():
+        raise Exception(f"{models_dir} is not a directory!")
+
+    ckpts = [
+        f
+        for f in models_dir.iterdir()
+        if (f.suffix.lower() == ".pt" and f.stem.lower().startswith("best"))
+    ]
+
+    return str(ckpts[0])
 
 
 def get_checkpoint(models_dir: Path) -> str:
@@ -116,7 +125,8 @@ def main(args):
     else:
         with open_dict(args):
             args.job_id = None
-        generate_single_image(args)
+        # generate_single_image(args)
+        generate_multiple_images(args)
 
 
 @hydra.main(version_base="1.2", config_path="config", config_name="cfg")
@@ -163,10 +173,6 @@ def generate_test_set(args):
 
         z = mu + std * epsilon
 
-        print(z.shape)
-        print(torch.max(z))
-        print(torch.min(z))
-
         recon_img = vae_net.decoder(z)
         img_cat = torch.cat((recon_img.cpu(), images.cpu()), 2)
         vutils.save_image(
@@ -184,15 +190,15 @@ def generate_test_set(args):
 def generate_single_image(args):
     Path(args.model_out_path).mkdir(exist_ok=True, parents=True)
     Path(args.results_out_path).mkdir(exist_ok=True, parents=True)
+    package_path = Path(args.package_path)
 
     device = torch.device("cuda")
 
     img = load_image(
-        "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/opt_graphene.png",
+        package_path.joinpath("data", "perfect_graphene", "opt_graphene.png"),
         resolution=args.train.image_size,
     )
     img = img.to(device)
-    print(img.shape)
 
     # Create VAE network
     vae_atoms = VAE(
@@ -203,39 +209,23 @@ def generate_single_image(args):
         deep_model=args.vae.deep_model,
     ).to(device)
 
-    # Carica il file salvato
     checkpoint = torch.load(
         get_checkpoint(Path(args.model_out_path)), weights_only=True
     )
-    # Ripristina lo stato del modello e dell'ottimizzatore
+
     vae_atoms.load_state_dict(checkpoint["model_state_dict"])
     vae_atoms.eval()
 
     _, mu, logvar = vae_atoms(img)
 
-    # Reparametrization trick per campionare dallo spazio latente
     std = torch.exp(0.5 * logvar)
-
-    # scale_factor = 1.5
-    # epsilon = torch.randn_like(std) * scale_factor
-
-    noise_factor = 0.8
-    # mu_noisy = mu + noise_factor * torch.randn_like(mu)
-
-    # z = mu_noisy + std * epsilon
 
     epsilon = torch.randn_like(std)
     z = mu + std * epsilon
-    z = z + 0.9 * torch.randn_like(z)
-
-    print(z.shape)
-    print(torch.max(z))
-    print(torch.min(z))
+    z = z + 0.75 * torch.randn_like(z)
 
     recon_img = vae_atoms.decoder(z)
     recon_img = (recon_img >= 0.5).float()
-    print(torch.max(recon_img))
-    print(torch.min(recon_img))
 
     vutils.save_image(
         recon_img.cpu(),
@@ -257,21 +247,20 @@ def generate_single_image(args):
 
 @hydra.main(version_base="1.2", config_path="config", config_name="cfg")
 def generate_multiple_images(args):
-    # Path(args.model_out_path).mkdir(exist_ok=True, parents=True)
     Path(args.results_out_path).joinpath("generated_dataset").mkdir(
         exist_ok=True, parents=True
     )
+    package_path = Path(args.package_path)
 
     n_images = 5000
 
     device = torch.device("cuda")
 
     img = load_image(
-        "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/opt_graphene.png",
+        package_path.joinpath("data", "perfect_graphene", "opt_graphene.png"),
         resolution=args.train.image_size,
     )
     img = img.to(device)
-    print(img.shape)
 
     # Create VAE network
     vae_atoms = VAE(
@@ -282,21 +271,18 @@ def generate_multiple_images(args):
         deep_model=args.vae.deep_model,
     ).to(device)
 
-    # Carica il file salvato
     checkpoint = torch.load(
         get_checkpoint(Path(args.model_out_path)), weights_only=False
     )
-    # Ripristina lo stato del modello e dell'ottimizzatore
+
     vae_atoms.load_state_dict(checkpoint["model_state_dict"])
     vae_atoms.eval()
 
     _, mu, logvar = vae_atoms(img)
 
     resnet_ckpt = torch.load(
-        str(
-            Path("./data/discriminator").joinpath(
-                "model", "best_model_epoch_176_vloss_0.0778.pt"
-            )
+        get_discriminator_checkpoint(
+            package_path.joinpath("data", "discriminator", "model")
         )
     )
     resnet = get_resnet_model()
@@ -317,7 +303,6 @@ def generate_multiple_images(args):
     i = 0
     start = time.time()
     while i < n_images:
-
         # Reparametrization trick per campionare dallo spazio latente
         std = torch.exp(0.5 * logvar)
         epsilon = torch.randn_like(std)
@@ -382,10 +367,7 @@ def generate_multiple_images(args):
 
     pbar.close()
     end = time.time()
-    send_message(
-        f"DG flakes generation complete ({(end-start)/60:.2f} minutes)",
-        disable_notification=True,
-    )
+    print(f"DG flakes generation complete ({(end - start) / 60:.2f} minutes)")
 
 
 if __name__ == "__main__":

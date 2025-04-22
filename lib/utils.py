@@ -3,7 +3,6 @@ try:
     import shutil
     from tqdm import tqdm
     import random
-    from PIL import Image
     from pathlib import Path
     from chemfiles import Trajectory
     from PIL import Image, ImageDraw
@@ -13,8 +12,6 @@ try:
     import cv2
     from numba import njit
     from scipy.spatial import distance
-    import math
-    from icecream import ic
     from lib.networks import MyDatasetPng, MyDatasetPngMixed
 
 except Exception as e:
@@ -31,7 +28,6 @@ class Utils:
         max_dim: list,
         multiplier: int = 3,
     ):
-
         with Trajectory(str(spath)) as trajectory:
             mol = trajectory.read()
 
@@ -67,7 +63,6 @@ class Utils:
         max_dim: list,
         multiplier: int = 3,
     ):
-
         with Trajectory(str(spath)) as trajectory:
             mol = trajectory.read()
 
@@ -123,7 +118,6 @@ class Utils:
 
     @staticmethod
     def crop_image(image: Image, name: str = None, dpath: Path = None) -> Image:
-
         image_data = np.asarray(image)
         if len(image_data.shape) == 2:
             image_data_bw = image_data
@@ -473,7 +467,6 @@ def convert_isolated_black_pixels(image_path, dpath):
 
 
 def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
-
     # Carica l'immagine
     binary = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
@@ -544,7 +537,6 @@ def draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
     # Salva l'immagine risultante
     output_path = image_path.replace(".png", "_with_bonds.png")
     cv2.imwrite(output_path, img_with_bonds)
-    print(f"Immagine con i legami salvata come: {output_path}")
 
 
 def new_draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11):
@@ -637,7 +629,6 @@ def new_draw_graphene_lattice(image_path, min_bond_length=7, max_bond_length=11)
     # Salva l'immagine risultante
     output_path = image_path.replace(".png", "_with_bonds.png")
     cv2.imwrite(output_path, img_with_bonds)
-    print(f"Immagine con i legami salvata come: {output_path}")
 
 
 def new_new_draw_graphene_lattice(
@@ -755,7 +746,6 @@ def new_new_draw_graphene_lattice(
     else:
         output_path = dpath
     cv2.imwrite(output_path, img_with_bonds)
-    print(f"Immagine con i legami salvata come: {output_path}")
 
 
 def find_average_distance(points, idx, radius):
@@ -833,33 +823,4 @@ def inverti_maschera_binaria(image_path):
 
 
 if __name__ == "__main__":
-    # max_dim = [39.53476932, 34.27629786]
-    max_dim = [34.61819255, 34.25591181]
-    # xyz_files_path = Path("../data/xyz_files")
-    # images_path = Path("../data/tmp")
-    Utils.from_xyz_to_png(
-        Path(
-            "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/temp"
-        ),
-        Path(
-            "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/perfect_graphene/temp2"
-        ),
-        max_dim=max_dim,
-        multiplier=6,
-    )
-    # Utils.split_images(
-    #     images_path, dataset_path=images_path.parent.joinpath("training_dataset_A")
-    # )
-    # Utils.generate_mixed_dataset(
-    #     images_atoms=Path("../data/images_240A"),
-    #     images_bonds=Path("../data/images_240"),
-    #     dataset_path=Path("../data/training_dataset_mixed"),
-    # )
-    # new_draw_graphene_lattice(
-    #     "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/generated/single_generated.png"
-    # )
-    # convert_isolated_black_pixels(
-    #     "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/single_generated_with_bonds.png",
-    #     "/home/tommaso/git_workspace/VAE_DefectedGraphene/results/final.png",
-    # )
     pass

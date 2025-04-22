@@ -1,6 +1,7 @@
-dataset_path: ./data/training_dataset_240A
-model_out_path: ./models/26_10
-results_out_path: ./results/26_10
+package_path: /home/tom/git_workspace/tesi/VAE_DefectedGraphene
+dataset_path: ./data/training_dataset
+model_out_path: ./models/VAE
+results_out_path: ./results/VAE
 matmul_precision: highest
 deterministic: True
 random_seed: 42
@@ -19,10 +20,8 @@ vae:
   latent_channels: 256
   deep_model: True
 
-telegram_bot: True
-
 # SLURM
-slurm: True
+slurm: False
 slurm_ncpus:
 slurm_ngpus: 1
 slurm_nnodes: 1
@@ -33,4 +32,4 @@ slurm_output: outputs/slurm_out
 slurm_exclude: gn05,gn06,gn07,wn01,wn02,wn03,wn04
 
 # ICECREAM VERBOSITY
-verbose: True
+verbose: False

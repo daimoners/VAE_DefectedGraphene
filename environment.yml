@@ -1,4 +1,4 @@
-name: cvae
+name: vae
 channels:
   - pytorch
   - nvidia
@@ -160,6 +160,7 @@ dependencies:
       - matplotlib==3.9.1
       - mdurl==0.1.2
       - multidict==6.0.5
+      - numba==0.61.2
       - numpy==2.0.1
       - omegaconf==2.3.0
       - opencv-python==4.10.0.84
@@ -169,11 +170,16 @@ dependencies:
       - python-dotenv==0.19.2
       - pytorch-lightning==2.3.3
       - pytz==2024.1
+      - pywavelets==1.8.0
       - rich==13.7.1
+      - scikit-learn==1.6.1
+      - scipy==1.15.2
+      - seaborn==0.13.2
+      - shap==0.47.2
       - submitit==1.5.1
       - torchmetrics==1.4.0.post0
       - tqdm==4.66.4
       - tzdata==2024.1
       - widgetsnbextension==4.0.11
       - yarl==1.9.4
-prefix: /home/tom/Applications/miniconda3/envs/cvae
+prefix: /home/tom/Applications/miniconda3/envs/vae

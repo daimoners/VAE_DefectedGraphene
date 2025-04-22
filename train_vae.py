@@ -10,11 +10,12 @@ try:
     from lib.loss import image_loss, fourier_loss, kl_loss
     from lib.utils import Utils
     import hydra
-    from telegram_bot import send_images, send_message
     from icecream import ic
     import submitit
-    from omegaconf import open_dict, OmegaConf
+    from omegaconf import open_dict
     import pandas as pd
+    import time
+    import yaml
 
 except Exception as e:
     print(f"Some module are missing from {__file__}: {e}\n")
@@ -136,6 +137,8 @@ def train(args):
     test_images.shape
 
     # TRAIN
+    start = time.time()
+
     early_stop_count = 0
     pbar_epochs = tqdm(total=nepoch, desc="Epochs", leave=False)
     for epoch in range(0, nepoch):
@@ -237,7 +240,7 @@ def train(args):
             ic(f"\nEarly stop count: {early_stop_count}")
 
         if early_stop_count >= early_stop_patience:
-            ic(f"\nEarly stop patience reached, stop the training")
+            ic("\nEarly stop patience reached, stop the training")
             break
 
         pbar_epochs.update(1)
@@ -245,6 +248,7 @@ def train(args):
         val_loss_log.clear()
         train_loss_log.clear()
     pbar_epochs.close()
+    end = time.time()
 
     # TEST
     # Carica il file salvato
@@ -264,19 +268,15 @@ def train(args):
             normalize=True,
         )
 
-    if args.telegram_bot:
-        message = f"Terminated VAE training with lowest val loss: {lowest_val_loss}"
-        send_message(message, parse_mode="MarkdownV2", disable_notification=True)
-        send_images(
-            {
-                "VAE Results": Path(
-                    f"{args.results_out_path}/img_{lowest_val_loss:.4f}.png"
-                )
-            },
-        )
-
     loss_df = pd.DataFrame({"train_loss": epoch_train_loss, "val_loss": epoch_val_loss})
     loss_df.to_csv(f"{args.model_out_path}/train_val_loss.csv", index=False)
+
+    train_results = {
+        "lowest val loss": lowest_val_loss,
+        "training_time": float((end - start) / 60),
+    }
+    with open(f"{args.model_out_path}/train_results.yaml", "w") as file:
+        yaml.dump(train_results, file, default_flow_style=False, allow_unicode=True)
 
 
 if __name__ == "__main__":

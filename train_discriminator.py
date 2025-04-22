@@ -1,12 +1,8 @@
 try:
     from pathlib import Path
-    import zipfile
     import numpy as np
-    import splitfolders
     import matplotlib.pyplot as plt
-    import shutil
     from PIL import Image
-    import random
     import torch
     from torchvision import transforms, datasets
     import torch.nn as nn
@@ -14,8 +10,6 @@ try:
     from tqdm import tqdm
     import time
     import os
-    from torchsummary import summary
-    import imghdr
     import submitit
     import hydra
     from icecream import ic
@@ -45,7 +39,7 @@ NUM_CLASSES = len(CLASSES)
 
 IMAGE_SIZE = (240, 240)
 BATCH_SIZE = 32
-EPOCHS = 300
+EPOCHS = 10  # 300
 LEARNING_RATE = 0.001
 NUM_WORKERS = 6
 
@@ -130,7 +124,6 @@ class MySimpleClassifier(nn.Module):
         self.fc3 = nn.Linear(self.fc2.out_features, num_classes)
 
     def forward(self, input):
-
         x = self.relu(self.conv128(input))
         x = self.batchnorm1(x)
         x = self.max_pool(x)
@@ -169,11 +162,7 @@ class MySimpleClassifier(nn.Module):
         return x.size()[1]
 
 
-def save_model(model, loss_function, optimizer, epoch, val_epoch_loss):
-    savepath = Path(
-        "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/discriminator/model"
-    )
-
+def save_model(model, loss_function, optimizer, epoch, val_epoch_loss, savepath):
     savepath.mkdir(exist_ok=True, parents=True)
 
     delete_old_models(savepath)
@@ -215,10 +204,10 @@ def training_step(model, train_dataloader, loss_function, optimizer, DEVICE_NAME
         enumerate(train_dataloader),
         total=int(len(train_dataloader.dataset) / train_dataloader.batch_size),
     ):
-
         if BINARY:
-            images, labels = data[0].to(DEVICE_NAME), data[1].to(
-                DEVICE_NAME, torch.float32
+            images, labels = (
+                data[0].to(DEVICE_NAME),
+                data[1].to(DEVICE_NAME, torch.float32),
             )
         else:
             images, labels = data[0].to(DEVICE_NAME), data[1].to(DEVICE_NAME)
@@ -263,10 +252,10 @@ def validation_step(model, val_dataloader, loss_function, optimizer, DEVICE_NAME
             enumerate(val_dataloader),
             total=int(len(val_dataloader.dataset) / val_dataloader.batch_size),
         ):
-
             if BINARY:
-                images, labels = data[0].to(DEVICE_NAME), data[1].to(
-                    DEVICE_NAME, torch.float32
+                images, labels = (
+                    data[0].to(DEVICE_NAME),
+                    data[1].to(DEVICE_NAME, torch.float32),
                 )
             else:
                 images, labels = data[0].to(DEVICE_NAME), data[1].to(DEVICE_NAME)
@@ -296,9 +285,14 @@ def validation_step(model, val_dataloader, loss_function, optimizer, DEVICE_NAME
 
 
 def train(
-    model, train_dataloader, val_dataloader, loss_function, optimizer, DEVICE_NAME
+    model,
+    train_dataloader,
+    val_dataloader,
+    loss_function,
+    optimizer,
+    DEVICE_NAME,
+    package_path,
 ):
-
     lowest_val_loss = float("inf")
     start = time.time()
 
@@ -306,7 +300,7 @@ def train(
     val_loss_log = []
 
     for epoch in range(EPOCHS):
-        print(f"Epoch {epoch+1} of {EPOCHS}")
+        print(f"Epoch {epoch + 1} of {EPOCHS}")
         train_epoch_loss = training_step(
             model, train_dataloader, loss_function, optimizer, DEVICE_NAME
         )
@@ -315,18 +309,27 @@ def train(
         )
 
         if val_epoch_loss < lowest_val_loss:
-            save_model(model, loss_function, optimizer, epoch, val_epoch_loss)
+            save_model(
+                model,
+                loss_function,
+                optimizer,
+                epoch,
+                val_epoch_loss,
+                package_path.joinpath("model"),
+            )
             lowest_val_loss = val_epoch_loss
             ic(lowest_val_loss)
 
-        print(f"Elapsed time: {(time.time()-start)/60:.3f} minutes\n")
+        print(f"Elapsed time: {(time.time() - start) / 60:.3f} minutes\n")
 
         train_loss_log.append(train_epoch_loss)
         val_loss_log.append(val_epoch_loss)
     end = time.time()
     loss_df = pd.DataFrame({"train_loss": train_loss_log, "val_loss": val_loss_log})
-    loss_df.to_csv("./discriminator_train_val_loss.csv", index=False)
-    print(f"{(end-start)/60:.3f} minutes")
+    loss_df.to_csv(
+        str(package_path.joinpath("discriminator_train_val_loss.csv")), index=False
+    )
+    print(f"{(end - start) / 60:.3f} minutes")
 
 
 @hydra.main(version_base="1.2", config_path="config", config_name="cfg")
@@ -388,10 +391,11 @@ def main(args):
 
 
 def discriminator(args):
-
-    package_path = Path(
-        "/home/tommaso/git_workspace/VAE_DefectedGraphene/data/discriminator"
-    )
+    package_path = Path(args.package_path).joinpath("data", "discriminator")
+    model_path = package_path.joinpath("model")
+    model_path.mkdir(exist_ok=True, parents=True)
+    results_path = package_path.joinpath("results")
+    results_path.mkdir(exist_ok=True, parents=True)
 
     DEVICE_NAME = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Device = {DEVICE_NAME}")
@@ -400,7 +404,7 @@ def discriminator(args):
         [
             transforms.Resize(IMAGE_SIZE),
             transforms.RandomHorizontalFlip(),
-            transforms.Grayscale(num_output_channels=1),  # Converti in grayscale
+            transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
         ]
     )
@@ -408,13 +412,12 @@ def discriminator(args):
     data_augmentation_val = data_augmentation_test = transforms.Compose(
         [
             transforms.Resize(IMAGE_SIZE),
-            transforms.Grayscale(num_output_channels=1),  # Converti in grayscale
+            transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
         ]
     )
 
     def create_pytorch_dataloader(train_path: Path, val_path: Path):
-
         train_folder = datasets.ImageFolder(str(train_path), data_augmentation_train)
         val_folder = datasets.ImageFolder(str(val_path), data_augmentation_val)
 
@@ -432,21 +435,21 @@ def discriminator(args):
 
     train_dataloader, val_dataloader = create_pytorch_dataloader(train_path, val_path)
 
-    # model = MySimpleClassifier(
-    #     num_classes=1 if BINARY else NUM_CLASSES, input_shape=IMAGE_SIZE + (1,)
-    # )
     model = get_resnet_model()
     loss_function = nn.BCEWithLogitsLoss() if BINARY else nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     model.to(DEVICE_NAME)
     train(
-        model, train_dataloader, val_dataloader, loss_function, optimizer, DEVICE_NAME
+        model,
+        train_dataloader,
+        val_dataloader,
+        loss_function,
+        optimizer,
+        DEVICE_NAME,
+        package_path,
     )
 
-    # model = MySimpleClassifier(
-    #     num_classes=1 if BINARY else NUM_CLASSES, input_shape=IMAGE_SIZE + (1,)
-    # )
     model = get_resnet_model()
     model.load_state_dict(
         torch.load(str(get_best_model_path(package_path.joinpath("model"))))[
@@ -466,35 +469,26 @@ def discriminator(args):
         x for x in test_path.joinpath("ok").iterdir() if x.suffix in IMAGE_EXTENSIONS
     ]
 
-    # Inizializza liste per le etichette e le predizioni
     y_true = []
     y_pred = []
 
-    # Definisci il mapping delle etichette
     labels_map = {"broken": 0, "ok": 1}
 
-    # Calcola le predizioni per ogni immagine nella cartella di test
     for label, samples in [("broken", samples_broken), ("ok", samples_ok)]:
         for img_path in samples:
-            # Carica e preprocessa l'immagine
             img = Image.open(str(img_path))
-            img_pytorch = data_augmentation_test(img)  # aggiungi la dimensione batch
+            img_pytorch = data_augmentation_test(img)
             img_pytorch = torch.unsqueeze(img_pytorch, dim=0)
 
-            # Ottieni la predizione dal modello
             with torch.no_grad():
                 output = np.squeeze(model(img_pytorch))
-                class_prediction = int(
-                    torch.round(torch.sigmoid(output))
-                )  # classe predetta
+                class_prediction = int(torch.round(torch.sigmoid(output)))
 
-            # Aggiungi le etichette vera e predetta
             y_true.append(labels_map[label])
             y_pred.append(class_prediction)
 
-    # Genera e mostra la confusion matrix
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
-    np.savetxt(f"./results/cmatrix.txt", cm)
+    np.savetxt(str(results_path.joinpath("cmatrix.txt")), cm)
     labels = ["Broken", "OK"]
 
     plt.figure(figsize=(7, 6))
@@ -526,35 +520,10 @@ def discriminator(args):
     plt.tight_layout()
     plt.tick_params(axis="both", which="major")
     plt.savefig(
-        f"./results/cmatrix.png",
+        str(results_path.joinpath("cmatrix.png")),
         dpi=300,
         bbox_inches="tight",
     )
-
-    # samples = [*samples_broken, *samples_ok]
-
-    # i = 0
-    # for file in random.sample(samples, k=10) if len(samples) > 10 else samples:
-
-    #     img = Image.open(str(file))
-    #     img_pytorch = data_augmentation_test(img)
-    #     img_pytorch = torch.unsqueeze(img_pytorch, dim=0)
-
-    #     with torch.no_grad():
-    #         if BINARY:
-    #             output = np.squeeze(model(img_pytorch))
-    #             class_prediction = int(torch.round(torch.sigmoid(output)))
-    #         else:
-    #             output = model(img_pytorch)
-    #             class_prediction = torch.argmax(output, dim=1)
-
-    #     plt.figure()
-    #     plt.title(f"{CLASSES[class_prediction]}")
-    #     plt.imshow(img)
-    #     plt.savefig(f"{package_path.joinpath('results',f'results_{i}.png')}")
-    #     plt.close()
-
-    #     i += 1
 
 
 if __name__ == "__main__":

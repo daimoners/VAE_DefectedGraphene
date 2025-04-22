@@ -8,3 +8,5 @@ outputs/
 results/
 *.csv
 TEMP/
+.codegpt
+RM/
